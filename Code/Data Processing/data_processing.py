@@ -99,7 +99,7 @@ def parse_summary(file_path):       # Parses the Text summaries
     f.close()
 
     for x in content:
-        file_lines.append(x.strip().split(" "))     # Appending the lines in the list
+        file_lines.append(x.strip().split(" "))             # Appending the lines in the list
         tags.append([12]*len(file_lines[-1]))               # Assigining the default labels to all the words in a line
         '''
         # Printing the information
