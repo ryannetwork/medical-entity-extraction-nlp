@@ -99,7 +99,7 @@ def parse_summary(file_path):       # Parses the Text summaries
     f.close()
 
     for x in content:
-        file_lines.append(x.lower().strip().split(" "))     # Appending the lines in the list
+        file_lines.append(x.strip().split(" "))     # Appending the lines in the list
         tags.append([12]*len(file_lines[-1]))               # Assigining the default labels to all the words in a line
         '''
         # Printing the information
@@ -159,7 +159,7 @@ def process_data(c_path, t_path, s_path):      # Read all the concept files to g
             file_lines, tags = parse_summary(os.path.join(t_path, f))   # Parses the document summaries to get the written notes
             tags = modify_labels(conceptList, tags)                     # Modifies he default labels to each word with the true labels from the concept files
             save_data([conceptList, file_lines, tags], os.path.join(s_path, f.split('.')[0]+".dat"))          # Saving the objects into a file
-            print_data(f, file_lines, tags)                           # Printing the details
+            # print_data(f, file_lines, tags)                           # Printing the details
 
 if __name__ == '__main__':
 
