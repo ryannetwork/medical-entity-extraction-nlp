@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from .memory import memory_unit
 from .processor import processor
+from .controller import backward_controller
 
 class DNC_Module(nn.Module):
 
@@ -28,16 +29,25 @@ class DNC_Module(nn.Module):
         # Creating NTM modules
         self.memory = memory_unit(self.N, self.M)
         self.processor = processor(self.num_inputs, self.num_outputs, self.M, self.N, num_read_heads, num_write_heads, controller_size, controller_layers)
+        
+        # Creating the Reverse Controller
+        self.bController = backward_controller(self.num_inputs, controller_size, controller_layers)
 
     def initialization(self, batch_size):   # Initializing all the Modules
         self.batch_size = batch_size
         self.memory.reset_memory(batch_size)
         self.previous_state = self.processor.create_new_state(batch_size)
+        self.previous_backward_states = self.bController.create_hidden_state(batch_size)
 
-    def forward(self, X=None):
+    def backward_prediction(self, X):       # Giving the input to the Backward Controller for making DNC Bi-Directional
+        # X dim: (seq_len x batch_size x self.num_inputs)
+        output, _ = self.bController(X, self.previous_backward_states)  # Output dim: (seq_len x batch x controller_size)
+        return output                                                   # Use embiddings from last to first (reverse way)
+
+    def forward(self, X=None, backward_embeddings=None):
         if X is None:
             X = torch.zeros(self.batch_size, self.num_inputs)
-        out, self.previous_state = self.processor(X, self.previous_state, self.memory)
+        out, self.previous_state = self.processor(X, backward_embeddings, self.previous_state, self.memory)
         return out, self.previous_state
     
     '''

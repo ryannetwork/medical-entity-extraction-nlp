@@ -44,6 +44,7 @@ class processor(nn.Module):
         self.tempo_links = []           # Stores the Temporal Linkages matrices L for all the write heads
         self.prec_weights = []          # Stores the Precedence weight vectors P for all the write heads
         self.num_read_mode = 1 + 2*self.num_write_heads        # 1 for content lookup and 2*num_write_head for forward and backward operation for each write head
+        self.drp = nn.Dropout(p=0.1)                           # Dropout layer used woth controller output when generating final DNC output
 
         # 1). Buffer are Tensors with require_grads() False
         # 2). But, in PyTorch, Tensors created; by default have require_grads() False
@@ -64,8 +65,9 @@ class processor(nn.Module):
         assert self.num_read_heads > 0, "Read Heads must be atleast 1"
 
         # Creating Linear Layer Transformation for getting Output
-        self.proc = nn.Linear(controller_size + self.num_read_heads*self.M, output_size)
+        self.proc = nn.Linear(2*controller_size + self.num_read_heads*self.M, output_size)
 
+        '''
         # Creating Linear Layer Transformation for getting Parameters
         self.write_vectors = nn.Linear(controller_size, self.num_write_heads*self.M)
         self.erase_vectors = nn.Linear(controller_size, self.num_write_heads*self.M)
@@ -77,40 +79,33 @@ class processor(nn.Module):
         self.write_strengths = nn.Linear(controller_size, self.num_write_heads)
         self.read_keys = nn.Linear(controller_size, self.num_read_heads*self.M)
         self.read_strengths = nn.Linear(controller_size, self.num_read_heads)
+        '''
+
+        # Making a list to keep track of all the param size
+        self.size_list = []
+        self.size_list.append(self.num_write_heads*self.M)              # Size of: write_vectors
+        self.size_list.append(self.num_write_heads*self.M)              # Size of: erase_vectors
+        self.size_list.append(self.num_read_heads)                      # Size of: free_gate
+        self.size_list.append(self.num_write_heads)                     # Size of: allocation_gate
+        self.size_list.append(self.num_write_heads)                     # Size of: write_gate
+        self.size_list.append(self.num_read_heads*self.num_read_mode)   # Size of: read_mode
+        self.size_list.append(self.num_write_heads*self.M)              # Size of: write_keys
+        self.size_list.append(self.num_write_heads)                     # Size of: write_strengths
+        self.size_list.append(self.num_read_heads*self.M)               # Size of: read_keys
+        self.size_list.append(self.num_read_heads)                      # Size of: read_strengths
+
+        # Creating Linear Layer Transformation for getting Parameters from Controller output
+        self.para_trans = nn.Linear(2*controller_size, sum(self.size_list))
+
+        # Initializing Layer Normalization function to normalize the param vector
+        self.lNorm = nn.LayerNorm(normalized_shape=sum(self.size_list))
 
         # Initializing the Parameters for Linear Layers
         nn.init.xavier_uniform_(self.proc.weight, gain=1)
         nn.init.normal_(self.proc.bias, std=0.01)
 
-        nn.init.xavier_uniform_(self.write_vectors.weight, gain=1)
-        nn.init.normal_(self.write_vectors.bias, std=0.01)
-
-        nn.init.xavier_uniform_(self.erase_vectors.weight, gain=1)
-        nn.init.normal_(self.erase_vectors.bias, std=0.01)
-
-        nn.init.xavier_uniform_(self.free_gate.weight, gain=1)
-        nn.init.normal_(self.free_gate.bias, std=0.01)
-
-        nn.init.xavier_uniform_(self.allocation_gate.weight, gain=1)
-        nn.init.normal_(self.allocation_gate.bias, std=0.01)
-
-        nn.init.xavier_uniform_(self.write_gate.weight, gain=1)
-        nn.init.normal_(self.write_gate.bias, std=0.01)
-
-        nn.init.xavier_uniform_(self.read_mode.weight, gain=1)
-        nn.init.normal_(self.read_mode.bias, std=0.01)
-
-        nn.init.xavier_uniform_(self.write_keys.weight, gain=1)
-        nn.init.normal_(self.write_keys.bias, std=0.01)
-
-        nn.init.xavier_uniform_(self.write_strengths.weight, gain=1)
-        nn.init.normal_(self.write_strengths.bias, std=0.01)
-
-        nn.init.xavier_uniform_(self.read_keys.weight, gain=1)
-        nn.init.normal_(self.read_keys.bias, std=0.01)
-
-        nn.init.xavier_uniform_(self.read_strengths.weight, gain=1)
-        nn.init.normal_(self.read_strengths.bias, std=0.01)
+        nn.init.xavier_uniform_(self.para_trans.weight, gain=1)
+        nn.init.normal_(self.para_trans.bias, std=0.01)
 
     def create_new_state(self, batch_size):     # Re-creates the New States
         init_r = [r.clone().repeat(batch_size, 1) for r in self.init_r]
@@ -120,21 +115,24 @@ class processor(nn.Module):
         prec_weights = [p.repeat(batch_size, 1) for p in self.prec_weights]    # Extending the Precedence weight vector size to accomodate multiple batches
         tempo_links = [l.repeat(batch_size, 1, 1) for l in self.tempo_links]   # Extending the Temporal link vector size to accomodate multiple batches
 
-        return init_r, controller_state, heads_state, usage, prec_weights, tempo_links      
+        return init_r, controller_state, heads_state, usage, prec_weights, tempo_links
 
-    def param_operations(self, inp):               # Calculating the head parameters based on the input from the LSTM controller
-        output = {}
+    def param_operations(self, inp):                # Calculating the head parameters based on the input from the LSTM controller
+        output = {}                                 # Stores the final output
+        l = np.cumsum([0] + self.size_list)         # Will be used for splitting the normalized output
 
-        output['write_vectors'] = (self.write_vectors(inp)).view(-1, self.num_write_heads, self.M)                        # Dim: (batch_size x num_write_heads x M)
-        output['erase_vectors'] = torch.sigmoid(self.erase_vectors(inp)).view(-1, self.num_write_heads, self.M)           # Dim: (batch_size x num_write_heads x M)
-        output['free_gate'] = torch.sigmoid(self.free_gate(inp))                                                          # Dim: (batch_size x num_read_heads)
-        output['allocation_gate'] = torch.sigmoid(self.allocation_gate(inp))                                              # Dim: (batch_size x num_write_heads)
-        output['write_gate'] = torch.sigmoid(self.write_gate(inp))                                                        # Dim: (batch_size x num_write_heads)
-        output['read_mode'] = F.softmax((self.read_mode(inp)).view(-1, self.num_read_heads, self.num_read_mode), dim=2)   # Dim: (batch_size x num_read_heads x num_read_mode)
-        output['write_keys'] = (self.write_keys(inp)).view(-1, self.num_write_heads, self.M)                              # Dim: (batch_size x num_write_heads x M)
-        output['write_strengths'] = 1 + F.softplus(self.write_strengths(inp))                                             # Dim: (batch_size x num_write_heads)
-        output['read_keys'] = (self.read_keys(inp)).view(-1, self.num_read_heads, self.M)                                 # Dim: (batch_size x num_read_heads x M)
-        output['read_strengths'] = 1 + F.softplus(self.read_strengths(inp))                                               # Dim: (batch_size x num_read_heads)
+        out_temp = self.lNorm(self.para_trans(inp)) # Normalizing the controller output after its linear transformation   # Dim: (batch_size x sum(self.size_list))
+
+        output['write_vectors'] = out_temp[:, l[0]:l[1]].view(-1, self.num_write_heads, self.M)                           # Dim: (batch_size x num_write_heads x M)
+        output['erase_vectors'] = torch.sigmoid(out_temp[:, l[1]:l[2]]).view(-1, self.num_write_heads, self.M)            # Dim: (batch_size x num_write_heads x M)
+        output['free_gate'] = torch.sigmoid(out_temp[:, l[2]:l[3]])                                                       # Dim: (batch_size x num_read_heads)
+        output['allocation_gate'] = torch.sigmoid(out_temp[:, l[3]:l[4]])                                                 # Dim: (batch_size x num_write_heads)
+        output['write_gate'] = torch.sigmoid(out_temp[:, l[4]:l[5]])                                                      # Dim: (batch_size x num_write_heads)
+        output['read_mode'] = F.softmax(out_temp[:, l[5]:l[6]].view(-1, self.num_read_heads, self.num_read_mode), dim=2)  # Dim: (batch_size x num_read_heads x num_read_mode)
+        output['write_keys'] = out_temp[:, l[6]:l[7]].view(-1, self.num_write_heads, self.M)                              # Dim: (batch_size x num_write_heads x M)
+        output['write_strengths'] = 1 + F.softplus(out_temp[:, l[7]:l[8]])                                                # Dim: (batch_size x num_write_heads)
+        output['read_keys'] = out_temp[:, l[8]:l[9]].view(-1, self.num_read_heads, self.M)                                # Dim: (batch_size x num_read_heads x M)
+        output['read_strengths'] = 1 + F.softplus(out_temp[:, l[9]:l[10]])                                                # Dim: (batch_size x num_read_heads)
         return output
 
     def calc_alloc_weights(self, head_params, prev_head_weights, prev_usage):   # Calculates allocation weights and returns them
@@ -236,7 +234,7 @@ class processor(nn.Module):
                 w_head_count += 1
         return new_prec_weights, new_tempo_links
         
-    def forward(self, X, prev_state, memory):   # X dimensions -> (batch_size x num_inputs)
+    def forward(self, X, backward_embeddings, prev_state, memory):   # X dimensions -> (batch_size x num_inputs)
         
         # Previous State Unpacking:
         prev_read, prev_controller_state, prev_head_weights, prev_usage, prev_prec_weights, prev_tempo_links = prev_state
@@ -244,13 +242,18 @@ class processor(nn.Module):
         # prev_read[i] -> batch_size x M
         # prev_read -> batch_size x (M*no_read_heads) 
         # prev_head_weights -> (num_read_heads + num_write_heads) sized list of (batch_size x N) sized tensors
+        # backward_embeddings -> batch_size x controller_size
 
         # Making input for controller
         inp = torch.cat([X] + prev_read, dim = 1)   # inp -> (batch_size x (num_inputs + (no_read_heads * M)))
-        c_output, c_state = self.controller(inp, prev_controller_state) # Getting embeddings from controller
+        c_output, c_state = self.controller(inp, prev_controller_state) # Getting embeddings from controller, c_output -> (batch_size x controller_size)
+
+        if backward_embeddings is None:
+            backward_embeddings = c_output
 
         # Calculating head parameters based on the controller output
-        head_params = self.param_operations(c_output)
+        temp_cat = torch.cat([c_output, backward_embeddings], dim = 1)  # Concatenating two embeddings. temp_cat -> (batch_size x 2*controller_size)
+        head_params = self.param_operations(temp_cat)
 
         # Calculating Allocation Weights
         head_params['alloc_weights'], new_usage = self.calc_alloc_weights(head_params, prev_head_weights, prev_usage)  # 'num_write_heads' sized list having each element of size (batch_size x N)
@@ -297,6 +300,6 @@ class processor(nn.Module):
         curr_state = (read_vec, c_state, head_weights, new_usage, new_prec_weights, new_tempo_links)
 
         # Generating Output
-        inp2 = torch.cat([c_output] + read_vec, dim = 1)
+        inp2 = torch.cat([self.drp(c_output), backward_embeddings] + read_vec, dim = 1)
         out = self.proc(inp2)                               # Passing the read vectors and controller output to the linear layer to generate final output
         return out, curr_state

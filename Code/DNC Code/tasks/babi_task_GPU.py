@@ -266,10 +266,13 @@ class task_babi():
             # by giving zero vector as input and previous read states and hidden vector
             # and thus training vector this way to give outputs matching the labels
 
-            X, Y, mask = X.cuda(), Y.cuda(), mask.cuda()       # Sending to CUDA device
+            X, Y, mask = X.cuda(), Y.cuda(), mask.cuda()            # Sending to CUDA device
 
-            for i in range(X.shape[0]):
-                Y_out[i, :, :], _ = self.machine(X[i])
+            embeddings = self.machine.backward_prediction(X)        # Creating embeddings from data for backward calculation
+            temp_size = X.shape[0]
+
+            for i in range(temp_size):
+                Y_out[i, :, :], _ = self.machine(X[i], embeddings[temp_size-i-1])
 
             corr, tot = self.calc_cost(Y_out, Y, mask)
 
@@ -304,12 +307,15 @@ class task_babi():
                 # by giving zero vector as input and previous read states and hidden vector
                 # and thus training vector this way to give outputs matching the labels
 
-                X, Y, mask = X.cuda(), Y.cuda(), mask.cuda()       # Sending to CUDA device
+                X, Y, mask = X.cuda(), Y.cuda(), mask.cuda()            # Sending to CUDA device
 
-                for i in range(X.shape[0]):
-                    Y_out[i, :, :], _ = self.machine(X[i])
+                embeddings = self.machine.backward_prediction(X)        # Creating embeddings from data for backward calculation
+                temp_size = X.shape[0]
 
-                loss = self.calc_loss(Y_out, Y, mask)       # Left: Calculate Accuracy instead of Loss
+                for i in range(temp_size):
+                    Y_out[i, :, :], _ = self.machine(X[i], embeddings[temp_size-i-1])   # Passing Embeddings from backwards
+
+                loss = self.calc_loss(Y_out, Y, mask)
                 loss.backward()
                 self.clip_grads()
                 self.optimizer.step()

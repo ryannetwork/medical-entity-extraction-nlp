@@ -18,31 +18,17 @@ def random_seed():
 
 def main():
     if len(sys.argv) > 1:
-        if sys.argv[1] == "1":
-            if sys.argv[2] == "GPU" and torch.cuda.is_available():  # Checking if GPU Request is given or not and availability of CUDA
-                from tasks.copy_task_GPU import task_copy
-            elif sys.argv[2] == "CPU":
-                from tasks.copy_task import task_copy
-            else:
-                print("Please specify the run device (GPU/CPU)")
-                exit()
-            c_task = task_copy()                    # Initialization of the Copy Task
-            print("\nStarting Copy Task for DNC\n")
-        elif sys.argv[1] == "2":
-            if sys.argv[2] == "GPU" and torch.cuda.is_available():  # Checking if GPU Request is given or not and availability of CUDA
-                from tasks.babi_task_GPU import task_babi
-            elif sys.argv[2] == "CPU":
-                from tasks.babi_task import task_babi
-            else:
-                print("Please specify the run device (GPU/CPU)")
-                exit()
-            c_task = task_babi()                    # Initialization of the bAbI Task
-            print("\nStarting bAbI Question Answering Task for DNC\n")
+        if sys.argv[1] == "GPU" and torch.cuda.is_available():  # Checking if GPU Request is given or not and availability of CUDA
+            from tasks.babi_task_GPU import task_babi
+        elif sys.argv[1] == "CPU":
+            from tasks.babi_task import task_babi
         else:
-            print("Task does not exist...")
+            print("Please specify the run device (GPU/CPU)")
             exit()
+        c_task = task_babi()                    # Initialization of the bAbI Task
+        print("\nStarting bAbI Question Answering Task for DNC\n")
     else:
-        print("Error: Enter the task for DNC training!\n1:Copy \n2:bAbI\n")
+        print("Please specify the run device (GPU/CPU)")
         exit()
 
     # Random Seed
