@@ -171,4 +171,9 @@ if __name__ == '__main__':
 	text_path = constants.PARTNER_REPORT_FILES_PATH
 
 	initialize_labels(save_path)                        # Initializing and saving the label dictionaries
-	process_data(concept_path, text_path, save_path)    # Processing the data
+	process_data(concept_path, text_path, save_path)    # Processing the data for partners
+
+
+	concept_path = constants.BETH_CONCEPT_FILES_PATH
+	text_path = constants.BETH_REPORT_FILES_PATH
+	process_data(concept_path, text_path, save_path)    # Processing the data for beth
