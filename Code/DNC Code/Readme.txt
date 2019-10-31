@@ -10,9 +10,12 @@ PyTorch
 
 Train the model by writing following in the terminal:
 
-"python3 train.py opt1"
+"python3 train.py opt1 opt2"
 
 ---------------------------------------
+opt1: 1). bAbI Task training
+      2). Medical NER task training
+      
 opt1: 1). GPU to run code on GPU
       2). CPU to run code normally
 ---------------------------------------
@@ -21,15 +24,18 @@ opt1: 1). GPU to run code on GPU
 
 Test the model by writing following in the terminal:
 
-"python3 test.py opt1 opt2 opt3"
+"python3 test.py opt1 opt2 opt3 opt4"
 
 ---------------------------------------
-opt1: 1). GPU to run code on GPU
+opt1: 1). bAbI Task training
+      2). Medical NER task training
+
+opt2: 1). GPU to run code on GPU
       2). CPU to run code normally
 
-opt2: Last Epoch number till the model was trained
+opt3: Last Epoch number till the model was trained
 
-Opt3: Last Batch Number till the model was trained 
+Opt4: Last Batch Number till the model was trained 
 ---------------------------------------
 
 ********************************************************************************
