@@ -17,18 +17,32 @@ def random_seed():
 ##########################################################################################################
 
 def main():
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "GPU" and torch.cuda.is_available():  # Checking if GPU Request is given or not and availability of CUDA
-            from tasks.babi_task_GPU import task_babi
-        elif sys.argv[1] == "CPU":
-            from tasks.babi_task import task_babi
+    if len(sys.argv) > 2:
+        if sys.argv[1] == "1":
+            if sys.argv[2] == "GPU" and torch.cuda.is_available():  # Checking if GPU Request is given or not and availability of CUDA
+                from tasks.babi_task_GPU import task_babi
+            elif sys.argv[2] == "CPU":
+                from tasks.babi_task import task_babi
+            else:
+                print("Please specify the run device (GPU/CPU)")
+                exit()
+            c_task = task_babi()                    # Initialization of the bAbI Task
+            print("\nStarting bAbI Question Answering Task for DNC\n")
+        elif sys.argv[1] == "2":
+            if sys.argv[2] == "GPU" and torch.cuda.is_available():  # Checking if GPU Request is given or not and availability of CUDA
+                from tasks.ner_task_GPU import task_NER
+            elif sys.argv[2] == "CPU":
+                from tasks.ner_task import task_NER
+            else:
+                print("Please specify the run device (GPU/CPU)")
+                exit()
+            c_task = task_NER()                    # Initialization of the bAbI Task
+            print("\nStarting Medical NER Task for DNC\n")
         else:
-            print("Please specify the run device (GPU/CPU)")
+            print("Unidentified task, please refer README file")
             exit()
-        c_task = task_babi()                    # Initialization of the bAbI Task
-        print("\nStarting bAbI Question Answering Task for DNC\n")
     else:
-        print("Please specify the run device (GPU/CPU)")
+        print("Incorrect Number of arguments")
         exit()
 
     # Random Seed
@@ -39,14 +53,6 @@ def main():
     c_task.init_optimizer()
 
     c_task.train_model()
-
-    '''
-    if c_task.get_task_name() == "copy_task" or c_task.get_task_name() == "copy_task_GPU":
-        loss, cost, inp, labels, prediction = c_task.test_model()
-    elif c_task.get_task_name() == "bAbI_task" or c_task.get_task_name() == "bAbI_task_GPU":
-        accuracy = c_task.test_model()
-    '''
-
     print("Training Completed!")
 
 if __name__ == '__main__':
