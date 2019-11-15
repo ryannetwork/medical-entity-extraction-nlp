@@ -1,4 +1,4 @@
-# Named Entity Recognition on Medical Data
+# Named Entity Recognition on Medical Data (bieos Tagging)
 import os
 import re
 import torch
@@ -15,7 +15,7 @@ from DNC.dnc import DNC_Module  # Importing DNC Implementation
 class task_NER():
 
     def __init__(self):
-        self.name = "NER_task"
+        self.name = "NER_task_bieos"
 
         # Controller Params
         self.controller_size = 128
@@ -119,7 +119,7 @@ class task_NER():
             self.reverseDict[self.labelDict[k]] = k
 
         # Saving the diictionaries into a file
-        self.save_data([self.labelDict, self.reverseDict], os.path.join(self.save_path, "label_dicts.dat"))
+        self.save_data([self.labelDict, self.reverseDict], os.path.join(self.save_path, "label_dicts_bieos.dat"))
 
     def parse_concepts(self, file_path):    # Parses the concept file to extract concepts and labels
         conceptList = []                    # Stores all the Concept in the File
@@ -170,7 +170,7 @@ class task_NER():
             # Storing the information as a dictionary
             dic['entity'] = entity      # Entity Name (In the form of list of words)
             dic['label'] = label        # Common Label
-            dic['BIEOS_labels'] = lab   # List of BIEOS label for each word
+            dic['BIEOS_labels'] = lab   # List of BIEOS labels for each word
             dic['label_index'] = noLab  # Labels in the index form
             dic['start_line'] = sLine   # Start line of the concept in the corresponding text summaries
             dic['start_word_no'] = sCol # Starting word number of the concept in the corresponding start line
@@ -315,23 +315,24 @@ class task_NER():
         if ~os.path.exists(self.save_path):
             os.mkdir(self.save_path)            # Creating a new directory if it does not exist else reading previously saved data
         
-        if ~os.path.exists(os.path.join(self.save_path, "label_dicts.dat")):
+        if ~os.path.exists(os.path.join(self.save_path, "label_dicts_bieos.dat")):
             self.initialize_labels()                                                                                        # Initialize label to index dictionaries
         else:
-            self.labelDict, self.reverseDict = pickle.load(open(os.path.join(self.save_path, "label_dicts.dat"), 'rb'))     # Loading Label dictionaries
+            self.labelDict, self.reverseDict = pickle.load(open(os.path.join(self.save_path, "label_dicts_bieos.dat"), 'rb'))     # Loading Label dictionaries
         
-        if ~os.path.exists(os.path.join(self.save_path, "object_dict_"+str(task)+".dat")):
+        if ~os.path.exists(os.path.join(self.save_path, "object_dict_bieos_"+str(task)+".dat")):
             data_dict = self.acquire_data(task)                                                                             # Read data from file
             line_list, tag_list = self.structure_data(data_dict)                                                            # Structures the data into proper form
             line_list = self.embed_input(line_list)                                                                         # Embeds input data (words) into embeddings : Left
-            self.save_data([line_list, tag_list], os.path.join(self.save_path, "object_dict_"+str(task)+".dat"))
+            self.save_data([line_list, tag_list], os.path.join(self.save_path, "object_dict_bieos_"+str(task)+".dat"))
         else:
-            line_list, tag_list = pickle.load(open(os.path.join(self.save_path, "object_dict_"+str(task)+".dat"), 'rb'))    # Loading Data dictionary
+            line_list, tag_list = pickle.load(open(os.path.join(self.save_path, "object_dict_bieos_"+str(task)+".dat"), 'rb'))    # Loading Data dictionary
         return line_list, tag_list
 
     def get_data(self, task='train'):
         line_list, tag_list = self.prepare_data(task)
 
+        # Shuffling stories
         story_idx = list(range(0, len(line_list)))
         random.shuffle(story_idx)
 
