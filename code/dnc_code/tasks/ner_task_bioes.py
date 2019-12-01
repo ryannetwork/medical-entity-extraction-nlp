@@ -1,4 +1,6 @@
 # Named Entity Recognition on Medical Data (bieos Tagging)
+# Bio-Word2Vec Embeddings Source and Reference: https://github.com/ncbi-nlp/BioWordVec
+
 import os
 import re
 import torch
@@ -26,7 +28,7 @@ class task_NER():
         self.num_write_heads = 2
 
         # Processor Params
-        self.num_inputs = -1            # Length of Embeddings : Left
+        self.num_inputs = 200           # Length of Embeddings
         self.num_outputs = 13           # Class size
 
         # Memory Params
@@ -54,11 +56,16 @@ class task_NER():
         self.reverseDict = None       # Inverse Label Dictionary - Index to Labels
 
         # File Paths
-        self.concept_path_train = "../Data/medical_data/training_data/partners/concept"     # Path to train concept files
-        self.text_path_train = "../Data/medical_data/training_data/partners/txt"            # Path to train text summaries
-        self.concept_path_test = "../Data/medical_data/test_data/partners/concept"          # Path to test concept files
-        self.text_path_test = "../Data/medical_data/test_data/partners/txt"                 # Path to test text summaries
-        self.save_path = "../Data/medical_data/cleaned_files"                               # Save path
+        self.concept_path_train = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/train_data/concept"  # Path to train concept files
+        self.text_path_train = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/train_data/txt"         # Path to train text summaries
+        self.concept_path_test = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/test_data/concept"    # Path to test concept files
+        self.text_path_test = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/test_data/txt"           # Path to test text summaries
+        self.save_path = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/cleaned_files"                # Save path
+        self.embed_dic_path = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/embeddings/bio_embedding_dictionary.dat"  # Word2Vec embeddings Dictionary path
+        self.random_vec = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/embeddings/random_vec.dat"   # Path to random embedding (Used to create new vectors)
+
+        # Miscellaneous
+        self.padding_symbol = np.full((self.num_inputs), 0.01)        # Padding symbol embedding
 
     def get_task_name(self):
         return self.name
@@ -100,18 +107,18 @@ class task_NER():
         self.reverseDict = {}               # Inverse Label Dictionary - Index to Labels
 
         # Using BIEOS labelling scheme
-        self.labelDict['problem_b'] = 0     # Problem - Beginning 
-        self.labelDict['problem_i'] = 1     # Problem - Inside
-        self.labelDict['problem_e'] = 2     # Problem - End
-        self.labelDict['problem_s'] = 3     # Problem - Single
-        self.labelDict['test_b'] = 4        # Test - Beginning
-        self.labelDict['test_i'] = 5        # Test - Inside
-        self.labelDict['test_e'] = 6        # Test - End
-        self.labelDict['test_s'] = 7        # Test - Single
-        self.labelDict['treatment_b'] = 8   # Treatment - Beginning
-        self.labelDict['treatment_i'] = 9   # Treatment - Inside
-        self.labelDict['treatment_e'] = 10  # Treatment - End
-        self.labelDict['treatment_s'] = 11  # Treatment - Single
+        self.labelDict['b-problem'] = 0     # Problem - Beginning 
+        self.labelDict['i-problem'] = 1     # Problem - Inside
+        self.labelDict['e-problem'] = 2     # Problem - End
+        self.labelDict['s-problem'] = 3     # Problem - Single
+        self.labelDict['b-test'] = 4        # Test - Beginning
+        self.labelDict['i-test'] = 5        # Test - Inside
+        self.labelDict['e-test'] = 6        # Test - End
+        self.labelDict['s-test'] = 7        # Test - Single
+        self.labelDict['b-treatment'] = 8   # Treatment - Beginning
+        self.labelDict['i-treatment'] = 9   # Treatment - Inside
+        self.labelDict['e-treatment'] = 10  # Treatment - End
+        self.labelDict['s-treatment'] = 11  # Treatment - Single
         self.labelDict['o'] = 12            # Outside Token
 
         # Making Inverse Label Dictionary
@@ -144,9 +151,9 @@ class task_NER():
                 lab = ['i']*len(entity)
                 lab[0] = 'b'
                 lab[-1] = 'e'
-                lab = [label+"_"+l for l in lab]
+                lab = [l+"-"+label for l in lab]
             elif len(entity) == 1:
-                lab = [label+"_"+"s"]
+                lab = ["s"+"-"+label]
             else:
                 print("Data in File: " + file_path + ", not in expected format..")
                 exit()
@@ -272,13 +279,13 @@ class task_NER():
 
         for k in data_dict.keys():              # Extracting data from each pre-processed file in dictionary
             file_lines = data_dict[k][1]        # Extracting story
-            tags = data_dict[k][2]              # Extracting corresponding words
+            tags = data_dict[k][2]              # Extracting corresponding labels
 
             # Creating empty lists
             temp1 = []
             temp2 = []
 
-            # Merging all the words in file into a single list. Same for corresponding labels
+            # Merging all the lines in file into a single list. Same for corresponding labels
             for i in range(len(file_lines)):
                 temp1.extend(file_lines[i])
                 temp2.extend(tags[i])
@@ -294,7 +301,6 @@ class task_NER():
     def padding(self, line_list, tag_list):     # Pads stories with padding symbol to make them of same length 
         diff = 0
         max_len = 0
-        padding_symbol = '<PAD>'                # Padding symbol embedding  : Left
         outside_class = len(self.labelDict)-1   # Classifying padding symbol as "outside" term
 
         # Calculating Max Summary Length
@@ -304,23 +310,52 @@ class task_NER():
 
         for i in range(len(line_list)):
             diff = max_len - len(line_list[i])
-            line_list[i].extend([padding_symbol]*diff)
+            line_list[i].extend([self.padding_symbol]*diff)
             tag_list[i].extend([outside_class]*diff)
             assert (len(line_list[i]) == max_len) and (len(line_list[i]) == len(tag_list[i])), "Padding unsuccessful"    # Sanity check
         return np.asarray(line_list), np.asarray(tag_list)      # Making NumPy array of size (batch_size x story_length x word size) and (batch_size x story_length x 1) respectively
 
+    def embed_input(self, line_list):       # Converts words to vector embeddings
+        final_list = [] # Stores embedded words
+        summary = None  # Temp variable
+        word = None     # Temp variable
+        temp = None     # Temp variable
+
+        embed_dic = pickle.load(open(self.embed_dic_path, 'rb'))  # Loading word2vec dictionary using Pickle
+        r_embed = pickle.load(open(self.random_vec, 'rb'))        # Loading Random embedding
+
+        for i in range(len(line_list)):     # Iterating over all the summaries
+            summary = line_list[i]
+            final_list.append([])           # Reserving space for curent summary
+
+            for j in range(len(summary)):
+                word = summary[j].lower()
+                if word in embed_dic:       # Checking for existence of word in dictionary
+                    final_list[-1].append(embed_dic[word])
+                else:
+                    temp = r_embed[:]       # Copying the values of the list
+                    random.shuffle(temp)    # Randomly shuffling the word embedding to make it unique
+                    temp = np.asarray(temp, dtype=np.float32)   # Converting to NumPy array
+                    final_list[-1].append(temp)
+        return final_list
+
     def prepare_data(self, task='train'):       # Preparing all the data necessary
         line_list, tag_list = None, None
 
-        if ~os.path.exists(self.save_path):
+        '''
+        line_list is the list of rows, where each row is a list of all the words in a medical summary
+        Similar is the case for tag_list, except, it stores labels for each words
+        '''
+
+        if not os.path.exists(self.save_path):
             os.mkdir(self.save_path)            # Creating a new directory if it does not exist else reading previously saved data
         
-        if ~os.path.exists(os.path.join(self.save_path, "label_dicts_bieos.dat")):
-            self.initialize_labels()                                                                                        # Initialize label to index dictionaries
+        if not os.path.exists(os.path.join(self.save_path, "label_dicts_bieos.dat")):
+            self.initialize_labels()                                                                                            # Initialize label to index dictionaries
         else:
-            self.labelDict, self.reverseDict = pickle.load(open(os.path.join(self.save_path, "label_dicts_bieos.dat"), 'rb'))     # Loading Label dictionaries
+            self.labelDict, self.reverseDict = pickle.load(open(os.path.join(self.save_path, "label_dicts_bieos.dat"), 'rb'))   # Loading Label dictionaries
         
-        if ~os.path.exists(os.path.join(self.save_path, "object_dict_bieos_"+str(task)+".dat")):
+        if not os.path.exists(os.path.join(self.save_path, "object_dict_bieos_"+str(task)+".dat")):
             data_dict = self.acquire_data(task)                                                                             # Read data from file
             line_list, tag_list = self.structure_data(data_dict)                                                            # Structures the data into proper form
             line_list = self.embed_input(line_list)                                                                         # Embeds input data (words) into embeddings : Left
