@@ -133,6 +133,8 @@ class task_NER():
             dic = {}
 
             # Cleaning and extracting the entities, labels and their positions in the corresponding medical summaries
+            x = re.sub('\n', ' ', x)
+            x = re.sub(r'\ +', ' ', x)
             x = x.strip().split('||')
 
             temp1, label = x[0].split(' '), x[1].split('=')[1][1:-1]
@@ -191,8 +193,8 @@ class task_NER():
         f.close()
 
         for x in content:
-            # x = re.sub('\n', ' ', x)
-            # x = re.sub(r'\ +', ' ', x)
+            x = re.sub('\n', ' ', x)
+            x = re.sub(r'\ +', ' ', x)
             file_lines.append(x.strip().split(" "))             # Spliting the lines into word list and Appending each of them in the file list
             tags.append([default_label]*len(file_lines[-1]))    # Assigining the default_label to all the words in a line
             '''
