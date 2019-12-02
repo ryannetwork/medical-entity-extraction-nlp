@@ -1,4 +1,4 @@
-# Named Entity Recognition on Medical Data (bieos Tagging)
+# Named Entity Recognition on Medical Data (BIO Tagging)
 # Bio-Word2Vec Embeddings Source and Reference: https://github.com/ncbi-nlp/BioWordVec
 
 import os
@@ -12,12 +12,12 @@ import torch.nn.functional as F
 import numpy as np
 import random
 
-from DNC.dnc import DNC_Module  # Importing DNC Implementation
+from DNC_GPU.dnc import DNC_Module  # Importing DNC Implementation
 
 class task_NER():
 
     def __init__(self):
-        self.name = "NER_task_bieos"
+        self.name = "NER_task_bio"
 
         # Controller Params
         self.controller_size = 128
@@ -72,9 +72,10 @@ class task_NER():
 
     def init_dnc(self):
         self.machine = DNC_Module(self.num_inputs, self.num_outputs, self.controller_size, self.controller_layers, self.num_read_heads, self.num_write_heads, self.memory_N, self.memory_M)
+        self.machine.cuda()     # Enabling GPU
 
     def init_loss(self):
-        self.loss = nn.CrossEntropyLoss(reduction = 'mean')  # Cross Entropy Loss -> Softmax Activation + Cross Entropy Loss
+        self.loss = nn.CrossEntropyLoss(reduction = 'mean').cuda()  # Cross Entropy Loss -> Softmax Activation + Cross Entropy Loss
 
     def init_optimizer(self):
         self.optimizer = optim.Adam(self.machine.parameters(), lr = self.adam_lr, betas = self.adam_betas, eps = self.adam_eps)
@@ -82,12 +83,12 @@ class task_NER():
     def calc_loss(self, Y_pred, Y):
         # Y: dim -> (sequence_len x batch_size)
         # Y_pred: dim -> (sequence_len x batch_size x num_outputs)
-        loss_vec = torch.empty(Y.shape[0], dtype=torch.float32)
+        loss_vec = torch.empty(Y.shape[0], dtype=torch.float32).cuda()
         for i in range(Y_pred.shape[0]):
             loss_vec[i] = self.loss(Y_pred[i], Y[i])
         return torch.mean(loss_vec)
 
-    def calc_cost(self, Y_pred, Y):       # Calculates % Cost
+    def calc_cost(self, Y_pred, Y):       # Calculates % Cost   # Needs rework. Consider whole entity instead of words
         # Y: dim -> (sequence_len x batch_size)
         # Y_pred: dim -> (sequence_len x batch_size x sequence_width)
         return torch.sum(((F.softmax(Y_pred, dim=2).max(2)[1]) == Y).type(torch.long)).item(), Y.shape[0]*Y.shape[1]
@@ -109,24 +110,18 @@ class task_NER():
         # Using BIEOS labelling scheme
         self.labelDict['b-problem'] = 0     # Problem - Beginning 
         self.labelDict['i-problem'] = 1     # Problem - Inside
-        self.labelDict['e-problem'] = 2     # Problem - End
-        self.labelDict['s-problem'] = 3     # Problem - Single
-        self.labelDict['b-test'] = 4        # Test - Beginning
-        self.labelDict['i-test'] = 5        # Test - Inside
-        self.labelDict['e-test'] = 6        # Test - End
-        self.labelDict['s-test'] = 7        # Test - Single
-        self.labelDict['b-treatment'] = 8   # Treatment - Beginning
-        self.labelDict['i-treatment'] = 9   # Treatment - Inside
-        self.labelDict['e-treatment'] = 10  # Treatment - End
-        self.labelDict['s-treatment'] = 11  # Treatment - Single
-        self.labelDict['o'] = 12            # Outside Token
+        self.labelDict['b-test'] = 2        # Test - Beginning
+        self.labelDict['i-test'] = 3        # Test - Inside
+        self.labelDict['b-treatment'] = 4   # Treatment - Beginning
+        self.labelDict['i-treatment'] = 5   # Treatment - Inside
+        self.labelDict['o'] = 6             # Outside Token
 
         # Making Inverse Label Dictionary
         for k in self.labelDict.keys():
             self.reverseDict[self.labelDict[k]] = k
 
         # Saving the diictionaries into a file
-        self.save_data([self.labelDict, self.reverseDict], os.path.join(self.save_path, "label_dicts_bieos.dat"))
+        self.save_data([self.labelDict, self.reverseDict], os.path.join(self.save_path, "label_dicts_bio.dat"))
 
     def parse_concepts(self, file_path):    # Parses the concept file to extract concepts and labels
         conceptList = []                    # Stores all the Concept in the File
@@ -149,13 +144,10 @@ class task_NER():
             temp1[-3] = temp1[-3][0:-1]
             entity = temp1[0:-2]
 
-            if len(entity) > 1:
+            if len(entity) >= 1:
                 lab = ['i']*len(entity)
                 lab[0] = 'b'
-                lab[-1] = 'e'
                 lab = [l+"-"+label for l in lab]
-            elif len(entity) == 1:
-                lab = ["s"+"-"+label]
             else:
                 print("Data in File: " + file_path + ", not in expected format..")
                 exit()
@@ -169,7 +161,7 @@ class task_NER():
             print("------------------------------------------------------------")
             print("Entity: " + str(entity))
             print("Entity Label: " + label)
-            print("Labels - BIEOS form: " + str(lab))
+            print("Labels - BIO form: " + str(lab))
             print("Labels  Index: " + str(noLab))
             print("Start Line: " + str(sLine) + ", Start Column: " + str(sCol))
             print("End Line: " + str(eLine) + ", End Column: " + str(eCol))
@@ -179,7 +171,7 @@ class task_NER():
             # Storing the information as a dictionary
             dic['entity'] = entity      # Entity Name (In the form of list of words)
             dic['label'] = label        # Common Label
-            dic['BIEOS_labels'] = lab   # List of BIEOS labels for each word
+            dic['BIO_labels'] = lab     # List of BIO labels for each word
             dic['label_index'] = noLab  # Labels in the index form
             dic['start_line'] = sLine   # Start line of the concept in the corresponding text summaries
             dic['start_word_no'] = sCol # Starting word number of the concept in the corresponding start line
@@ -194,7 +186,7 @@ class task_NER():
     def parse_summary(self, file_path):         # Parses the Text summaries
         file_lines = []                         # Stores the lins of files in the list form
         tags = []                               # Stores corresponding labels for each word in the file (Default label: 'o' [Outside])
-        default_label = len(self.labelDict)-1   # default_label is "12" (Corresponding to 'Other' entity) 
+        default_label = len(self.labelDict)-1   # default_label is "7" (Corresponding to 'Other' entity) 
         # counter = 1                           # Temporary variable used during print
 
         f = open(file_path)             # Opening and reading a concept file
@@ -354,18 +346,18 @@ class task_NER():
         if not os.path.exists(self.save_path):
             os.mkdir(self.save_path)            # Creating a new directory if it does not exist else reading previously saved data
         
-        if not os.path.exists(os.path.join(self.save_path, "label_dicts_bieos.dat")):
-            self.initialize_labels()                                                                                            # Initialize label to index dictionaries
+        if not os.path.exists(os.path.join(self.save_path, "label_dicts_bio.dat")):
+            self.initialize_labels()                                                                                        # Initialize label to index dictionaries
         else:
-            self.labelDict, self.reverseDict = pickle.load(open(os.path.join(self.save_path, "label_dicts_bieos.dat"), 'rb'))   # Loading Label dictionaries
+            self.labelDict, self.reverseDict = pickle.load(open(os.path.join(self.save_path, "label_dicts_bio.dat"), 'rb')) # Loading Label dictionaries
         
-        if not os.path.exists(os.path.join(self.save_path, "object_dict_bieos_"+str(task)+".dat")):
+        if not os.path.exists(os.path.join(self.save_path, "object_dict_bio_"+str(task)+".dat")):
             data_dict = self.acquire_data(task)                                                                             # Read data from file
             line_list, tag_list = self.structure_data(data_dict)                                                            # Structures the data into proper form
-            line_list = self.embed_input(line_list)                                                                         # Embeds input data (words) into embeddings : Left
-            self.save_data([line_list, tag_list], os.path.join(self.save_path, "object_dict_bieos_"+str(task)+".dat"))
+            line_list = self.embed_input(line_list)                                                                         # Embeds input data (words) into embeddings
+            self.save_data([line_list, tag_list], os.path.join(self.save_path, "object_dict_bio_"+str(task)+".dat"))
         else:
-            line_list, tag_list = pickle.load(open(os.path.join(self.save_path, "object_dict_bieos_"+str(task)+".dat"), 'rb'))    # Loading Data dictionary
+            line_list, tag_list = pickle.load(open(os.path.join(self.save_path, "object_dict_bio_"+str(task)+".dat"), 'rb'))    # Loading Data dictionary
         return line_list, tag_list
 
     def get_data(self, task='train'):
@@ -396,7 +388,7 @@ class task_NER():
 
                 # Padding and converting labels to one hot vectors
                 x_out_pad, y_out_pad = self.padding(x_out, y_out)
-                x_out_array = torch.tensor(x_out_pad.swapaxes(0, 1), dtype=torch.float32)  # Converting from (batch_size x story_length x word size) to (story_length x batch_size x word size)
+                x_out_array = torch.tensor(x_out_pad.swapaxes(0, 1), dtype=torch.float32)                       # Converting from (batch_size x story_length x word size) to (story_length x batch_size x word size)
                 y_out_array = torch.tensor(y_out_pad.swapaxes(0, 1), dtype=torch.long)     # Converting from (batch_size x story_length x 1) to (story_length x batch_size x 1)
 
                 x_out = []
@@ -416,11 +408,13 @@ class task_NER():
             for batch_num, X, Y in self.get_data(task='train'):
                 self.optimizer.zero_grad()                      # Making old gradients zero before calculating the fresh ones
                 self.machine.initialization(self.batch_size)    # Initializing states
-                Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32)    # dim: (seq_len x batch_size x num_output)
+                Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32).cuda()    # dim: (seq_len x batch_size x num_output)
 
                 # Feeding the DNC network all the data first and then predicting output
                 # by giving zero vector as input and previous read states and hidden vector
                 # and thus training vector this way to give outputs matching the labels
+
+                X, Y = X.cuda(), Y.cuda()
 
                 embeddings = self.machine.backward_prediction(X)        # Creating embeddings from data for backward calculation
                 temp_size = X.shape[0]
@@ -433,7 +427,7 @@ class task_NER():
                 self.clip_grads()
                 self.optimizer.step()
 
-                corr, tot = self.calc_cost(Y_out, Y)
+                corr, tot = self.calc_cost(Y_out.cpu(), Y.cpu())
 
                 loss_list += [loss.item()]
                 seq_length += [Y.shape[0]]
@@ -452,11 +446,13 @@ class task_NER():
 
         for batch_num, X, Y in self.get_data(task='test'):
             self.machine.initialization(self.batch_size)    # Initializing states
-            Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32)    # dim: (seq_len x batch_size x num_output)
+            Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32).cuda()    # dim: (seq_len x batch_size x num_output)
 
             # Feeding the DNC network all the data first and then predicting output
             # by giving zero vector as input and previous read states and hidden vector
             # and thus training vector this way to give outputs matching the labels
+
+            X = X.cuda()
 
             embeddings = self.machine.backward_prediction(X)        # Creating embeddings from data for backward calculation
             temp_size = X.shape[0]
@@ -464,7 +460,7 @@ class task_NER():
             for i in range(temp_size):
                 Y_out[i, :, :], _ = self.machine(X[i], embeddings[temp_size-i-1])
 
-            corr, tot = self.calc_cost(Y_out, Y)
+            corr, tot = self.calc_cost(Y_out.cpu(), Y)
 
             correct += corr
             total += tot

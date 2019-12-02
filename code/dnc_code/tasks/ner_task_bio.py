@@ -185,7 +185,7 @@ class task_NER():
     def parse_summary(self, file_path):         # Parses the Text summaries
         file_lines = []                         # Stores the lins of files in the list form
         tags = []                               # Stores corresponding labels for each word in the file (Default label: 'o' [Outside])
-        default_label = len(self.labelDict)-1   # default_label is "12" (Corresponding to 'Other' entity) 
+        default_label = len(self.labelDict)-1   # default_label is "7" (Corresponding to 'Other' entity) 
         # counter = 1                           # Temporary variable used during print
 
         f = open(file_path)             # Opening and reading a concept file
@@ -372,6 +372,8 @@ class task_NER():
         # Out Data
         x_out = []
         y_out = []
+        
+        counter = 1
 
         for i in story_idx:
             if num_batch<=0:
@@ -382,10 +384,10 @@ class task_NER():
 
             if counter % self.batch_size == 0:
                 counter = 0
-
+                
                 # Padding and converting labels to one hot vectors
                 x_out_pad, y_out_pad = self.padding(x_out, y_out)
-                x_out_array = torch.tensor(x_out_pad.swapaxes(0, 1))                       # Converting from (batch_size x story_length x word size) to (story_length x batch_size x word size)
+                x_out_array = torch.tensor(x_out_pad.swapaxes(0, 1), dtype=torch.float32)                       # Converting from (batch_size x story_length x word size) to (story_length x batch_size x word size)
                 y_out_array = torch.tensor(y_out_pad.swapaxes(0, 1), dtype=torch.long)     # Converting from (batch_size x story_length x 1) to (story_length x batch_size x 1)
 
                 x_out = []

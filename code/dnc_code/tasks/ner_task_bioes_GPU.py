@@ -12,7 +12,7 @@ import torch.nn.functional as F
 import numpy as np
 import random
 
-from DNC.dnc import DNC_Module  # Importing DNC Implementation
+from DNC_GPU.dnc import DNC_Module  # Importing DNC Implementation
 
 class task_NER():
 
@@ -72,9 +72,10 @@ class task_NER():
 
     def init_dnc(self):
         self.machine = DNC_Module(self.num_inputs, self.num_outputs, self.controller_size, self.controller_layers, self.num_read_heads, self.num_write_heads, self.memory_N, self.memory_M)
+        self.machine.cuda()
 
     def init_loss(self):
-        self.loss = nn.CrossEntropyLoss(reduction = 'mean')  # Cross Entropy Loss -> Softmax Activation + Cross Entropy Loss
+        self.loss = nn.CrossEntropyLoss(reduction = 'mean').cuda()  # Cross Entropy Loss -> Softmax Activation + Cross Entropy Loss
 
     def init_optimizer(self):
         self.optimizer = optim.Adam(self.machine.parameters(), lr = self.adam_lr, betas = self.adam_betas, eps = self.adam_eps)
@@ -82,12 +83,12 @@ class task_NER():
     def calc_loss(self, Y_pred, Y):
         # Y: dim -> (sequence_len x batch_size)
         # Y_pred: dim -> (sequence_len x batch_size x num_outputs)
-        loss_vec = torch.empty(Y.shape[0], dtype=torch.float32)
+        loss_vec = torch.empty(Y.shape[0], dtype=torch.float32).cuda()
         for i in range(Y_pred.shape[0]):
             loss_vec[i] = self.loss(Y_pred[i], Y[i])
         return torch.mean(loss_vec)
 
-    def calc_cost(self, Y_pred, Y):       # Calculates % Cost
+    def calc_cost(self, Y_pred, Y):       # Calculates % Cost   # Needs rework. Consider whole entity instead of words
         # Y: dim -> (sequence_len x batch_size)
         # Y_pred: dim -> (sequence_len x batch_size x sequence_width)
         return torch.sum(((F.softmax(Y_pred, dim=2).max(2)[1]) == Y).type(torch.long)).item(), Y.shape[0]*Y.shape[1]
@@ -416,11 +417,13 @@ class task_NER():
             for batch_num, X, Y in self.get_data(task='train'):
                 self.optimizer.zero_grad()                      # Making old gradients zero before calculating the fresh ones
                 self.machine.initialization(self.batch_size)    # Initializing states
-                Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32)    # dim: (seq_len x batch_size x num_output)
+                Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32).cuda()    # dim: (seq_len x batch_size x num_output)
 
                 # Feeding the DNC network all the data first and then predicting output
                 # by giving zero vector as input and previous read states and hidden vector
                 # and thus training vector this way to give outputs matching the labels
+
+                X, Y = X.cuda(), Y.cuda()
 
                 embeddings = self.machine.backward_prediction(X)        # Creating embeddings from data for backward calculation
                 temp_size = X.shape[0]
@@ -433,7 +436,7 @@ class task_NER():
                 self.clip_grads()
                 self.optimizer.step()
 
-                corr, tot = self.calc_cost(Y_out, Y)
+                corr, tot = self.calc_cost(Y_out.cpu(), Y.cpu())
 
                 loss_list += [loss.item()]
                 seq_length += [Y.shape[0]]
@@ -452,11 +455,13 @@ class task_NER():
 
         for batch_num, X, Y in self.get_data(task='test'):
             self.machine.initialization(self.batch_size)    # Initializing states
-            Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32)    # dim: (seq_len x batch_size x num_output)
+            Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32).cuda()    # dim: (seq_len x batch_size x num_output)
 
             # Feeding the DNC network all the data first and then predicting output
             # by giving zero vector as input and previous read states and hidden vector
             # and thus training vector this way to give outputs matching the labels
+
+            X = X.cuda()
 
             embeddings = self.machine.backward_prediction(X)        # Creating embeddings from data for backward calculation
             temp_size = X.shape[0]
@@ -464,7 +469,7 @@ class task_NER():
             for i in range(temp_size):
                 Y_out[i, :, :], _ = self.machine(X[i], embeddings[temp_size-i-1])
 
-            corr, tot = self.calc_cost(Y_out, Y)
+            corr, tot = self.calc_cost(Y_out.cpu(), Y)
 
             correct += corr
             total += tot
