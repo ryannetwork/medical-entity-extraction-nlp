@@ -24,12 +24,12 @@ class task_NER():
         self.controller_layers = 1
 
         # Head Params
-        self.num_read_heads = 2
-        self.num_write_heads = 2
+        self.num_read_heads = 1
+        self.num_write_heads = 1
 
         # Processor Params
         self.num_inputs = 200           # Length of Embeddings
-        self.num_outputs = 13           # Class size
+        self.num_outputs = 7            # Class size
 
         # Memory Params
         self.memory_N = 128
@@ -37,8 +37,8 @@ class task_NER():
 
         # Training Params
         self.num_batches = -1
-        self.save_batch = 500           # Saving model after every save_batch number of batches
-        self.batch_size = 10
+        self.save_batch = 50           # Saving model after every save_batch number of batches
+        self.batch_size = 5
         self.num_epoch = 1
 
         # Optimizer Params
@@ -56,13 +56,14 @@ class task_NER():
         self.reverseDict = None       # Inverse Label Dictionary - Index to Labels
 
         # File Paths
-        self.concept_path_train = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/train_data/concept"  # Path to train concept files
-        self.text_path_train = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/train_data/txt"         # Path to train text summaries
-        self.concept_path_test = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/test_data/concept"    # Path to test concept files
-        self.text_path_test = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/test_data/txt"           # Path to test text summaries
-        self.save_path = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/cleaned_files"                # Save path
-        self.embed_dic_path = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/embeddings/bio_embedding_dictionary.dat"  # Word2Vec embeddings Dictionary path
-        self.random_vec = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/embeddings/random_vec.dat"   # Path to random embedding (Used to create new vectors)
+        self.concept_path_train = "/content/drive/Shared drives/BioNLP/project/medical_data/train_data/concept"  # Path to train concept files
+        self.text_path_train = "/content/drive/Shared drives/BioNLP/project/medical_data/train_data/txt"         # Path to train text summaries
+        self.concept_path_test = "/content/drive/Shared drives/BioNLP/project/medical_data/test_data/concept"    # Path to test concept files
+        self.text_path_test = "/content/drive/Shared drives/BioNLP/project/medical_data/test_data/txt"           # Path to test text summaries
+        self.save_path = "/content/drive/Shared drives/BioNLP/project/medical_data/cleaned_files"                # Save path
+        self.embed_dic_path = "/content/drive/Shared drives/BioNLP/project/medical_data/embeddings/bio_embedding_dictionary.dat"  # Word2Vec embeddings Dictionary path
+        self.random_vec = "/content/drive/Shared drives/BioNLP/project/medical_data/embeddings/random_vec.dat"   # Path to random embedding (Used to create new vectors)
+        self.model_path = "/content/drive/Shared drives/BioNLP/project/ner_dnc_code/Saved_Models/"               # Stores Trained Models
 
         # Miscellaneous
         self.padding_symbol = np.full((self.num_inputs), 0.01)        # Padding symbol embedding
@@ -88,10 +89,51 @@ class task_NER():
             loss_vec[i] = self.loss(Y_pred[i], Y[i])
         return torch.mean(loss_vec)
 
-    def calc_cost(self, Y_pred, Y):       # Calculates % Cost   # Needs rework. Consider whole entity instead of words
+    def calc_cost(self, Y_pred, Y):       # Calculates % Cost
         # Y: dim -> (sequence_len x batch_size)
         # Y_pred: dim -> (sequence_len x batch_size x sequence_width)
-        return torch.sum(((F.softmax(Y_pred, dim=2).max(2)[1]) == Y).type(torch.long)).item(), Y.shape[0]*Y.shape[1]
+
+        # Stores correct class labels for each entity type
+        class_bag = {}
+        class_bag['problem'] = 0        # Total labels
+        class_bag['test'] = 0           # Total labels
+        class_bag['treatment'] = 0      # Total labels
+        class_bag['problem_cor'] = 0    # Correctly classified labels
+        class_bag['test_cor'] = 0       # Correctly classified labels
+        class_bag['treatment_cor'] = 0  # Correctly classified labels
+        
+        pred_class = np.transpose(F.softmax(Y_pred, dim=2).max(2)[1].numpy()).reshape(-1)   # Predicted class. dim -> (sequence_len*batch_size)
+        Y = np.transpose(Y.numpy()).reshape(-1)                                             # Converting to NumPy Array and linearizing
+        cor_pred = (Y == pred_class).astype(np.int)   # Comparing Prediction and Labels to find correct predictions
+
+        class_bag['word_pred_acc'] = np.divide(np.sum(cor_pred), cor_pred.size)*100.0     # % Accuracy of Correctly Predicted Words (Not Entities)
+
+        # Getting the beginning index of all the entities
+        beg_idx = list(np.where(np.in1d(Y, [0, 2, 4]))[0])
+
+        # Getting the end index of all the entities (All the Index previous of 'Other'/'Begin' and not equal to 'Other')
+        target = np.where(np.in1d(Y, [0, 2, 4, 6]))[0] - 1
+        if target[0] == -1:
+            target = target[1:]
+        end_idx = list(target[np.where(Y[target] != 6)[0]])
+        if Y[-1] != 6:
+            end_idx.append(Y.size-1)
+
+        assert len(beg_idx) == len(end_idx)     # Sanity Check
+        class_bag['total'] = len(beg_idx)       # Total number of Entities
+
+        # Counting Entities
+        sum_vec = np.cumsum(cor_pred)           # Calculates cumulative summation of predicted vector
+        for b, e in zip(beg_idx, end_idx):
+            idx_range = e-b+1                   # Entity span
+            sum_range = sum_vec[e]-sum_vec[b]+1 # Count of entity elements which are predicted correctly
+
+            lab = self.reverseDict[Y[b]][2:]    # Extracting entity type (Problem, Test or Treatment)
+            class_bag[lab] = class_bag[lab]+1   # Getting count of each entities
+            
+            if sum_range == idx_range:              # +1 if entity is classified correctly
+                class_bag[lab+'_cor'] = class_bag[lab+'_cor']+1
+        return class_bag
 
     def print_word(self, token_class):         # Prints the Class name from Class number
         word = self.reverseDict[token_class]
@@ -373,7 +415,7 @@ class task_NER():
         # Out Data
         x_out = []
         y_out = []
-
+        
         counter = 1
 
         for i in story_idx:
@@ -388,7 +430,7 @@ class task_NER():
 
                 # Padding and converting labels to one hot vectors
                 x_out_pad, y_out_pad = self.padding(x_out, y_out)
-                x_out_array = torch.tensor(x_out_pad.swapaxes(0, 1), dtype=torch.float32)                       # Converting from (batch_size x story_length x word size) to (story_length x batch_size x word size)
+                x_out_array = torch.tensor(x_out_pad.swapaxes(0, 1), dtype=torch.float32)  # Converting from (batch_size x story_length x word size) to (story_length x batch_size x word size)
                 y_out_array = torch.tensor(y_out_pad.swapaxes(0, 1), dtype=torch.long)     # Converting from (batch_size x story_length x 1) to (story_length x batch_size x 1)
 
                 x_out = []
@@ -399,7 +441,7 @@ class task_NER():
             counter += 1
 
     def train_model(self):
-        # Here, the model is optimized using Cross Entropy Loss, however, it is evaluated using Number of error bits in predction and actual labels (cost)
+        # Here, the model is optimized using Cross Entropy Loss.
         loss_list = []
         seq_length = []
         last_batch = 0
@@ -427,7 +469,10 @@ class task_NER():
                 self.clip_grads()
                 self.optimizer.step()
 
-                corr, tot = self.calc_cost(Y_out.cpu(), Y.cpu())
+                class_bag = self.calc_cost(Y_out.cpu(), Y.cpu())
+
+                corr = class_bag['problem_cor']+class_bag['test_cor']+class_bag['treatment_cor']
+                tot = class_bag['total']
 
                 loss_list += [loss.item()]
                 seq_length += [Y.shape[0]]
@@ -436,7 +481,8 @@ class task_NER():
                     self.save_model(j, batch_num)
 
                 last_batch = batch_num
-                print("Epoch: " + str(j) + "/" + str(self.num_epoch) + ", Batch: " + str(batch_num) + "/" + str(self.num_batches) + ", Loss: " + str(loss.item()) + ", Batch Accuracy: " + str((float(corr)/float(tot))*100.0) + " %")
+                print("Epoch: " + str(j) + "/" + str(self.num_epoch) + ", Batch: " + str(batch_num) + "/" + str(self.num_batches) + ", Loss: {0:.2f}, ".format(loss.item()) + \
+                    "Batch Accuracy (Entity Prediction): {0:.2f} %, ".format((float(corr)/float(tot))*100.0) + "Batch Accuracy (Word Prediction): {0:.2f} %".format(class_bag['word_pred_acc']))
             self.save_model(j, last_batch)
 
     def test_model(self):   # Testing the model
@@ -460,27 +506,30 @@ class task_NER():
             for i in range(temp_size):
                 Y_out[i, :, :], _ = self.machine(X[i], embeddings[temp_size-i-1])
 
-            corr, tot = self.calc_cost(Y_out.cpu(), Y)
+            class_bag = self.calc_cost(Y_out.cpu(), Y)
+
+            corr = class_bag['problem_cor']+class_bag['test_cor']+class_bag['treatment_cor']
+            tot = class_bag['total']
 
             correct += corr
             total += tot
-            print("Test Example " + str(batch_num) + "/" + str(self.num_batches) + " processed, Batch Accuracy: " + str((float(corr)/float(tot))*100.0) + " %")
+            print("Test Example " + str(batch_num) + "/" + str(self.num_batches) + " processed, Batch Accuracy: {0:.2f} %, ".format((float(corr)/float(tot))*100.0) + "Batch Accuracy (Word Prediction): {0:.2f} %".format(class_bag['word_pred_acc']))
         
         accuracy = (float(correct)/float(total))*100.0
-        print("\nOverall Accuracy: " + str(accuracy) + " %")
+        print("\nOverall Entity Prediction Accuracy: {0:.2f} %".format(accuracy))
         return accuracy         # in %
 
     def save_model(self, curr_epoch, curr_batch):
         # Here 'start_epoch' and 'start_batch' params below are the 'epoch' and 'batch' number from which to start training after next model loading
         # Note: It is recommended to start from the 'start_epoch' and not 'start_epoch' + 'start_batch', because batches are formed randomly
-        if not os.path.exists("Saved_Models/" + self.name):
-            os.mkdir("Saved_Models/" + self.name)
+        if not os.path.exists(os.path.join(self.model_path, self.name)):
+            os.mkdir(os.path.join(self.model_path, self.name))
         state_dic = {'task_name': self.name, 'start_epoch': curr_epoch + 1, 'start_batch': curr_batch + 1, 'state_dict': self.machine.state_dict(), 'optimizer_dic' : self.optimizer.state_dict()}
-        filename = "Saved_Models/" + self.name + "/" + self.name + "_" + str(curr_epoch) + "_" + str(curr_batch) + "_saved_model.pth.tar"
+        filename = self.model_path + self.name + "/" + self.name + "_" + str(curr_epoch) + "_" + str(curr_batch) + "_saved_model.pth.tar"
         torch.save(state_dic, filename)
 
     def load_model(self, option, epoch, batch):
-        path = "Saved_Models/" + self.name + "/" + self.name + "_" + str(epoch) + "_" + str(batch) + "_saved_model.pth.tar"
+        path = self.model_path + self.name + "/" + self.name + "_" + str(epoch) + "_" + str(batch) + "_saved_model.pth.tar"
         if option == 1:             # Loading for training
             checkpoint = torch.load(path)
             self.machine.load_state_dict(checkpoint['state_dict'])
