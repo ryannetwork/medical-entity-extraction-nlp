@@ -485,6 +485,13 @@ class task_NER():
     def test_model(self):   # Testing the model
         correct = 0
         total = 0
+        result_dict = {}
+        result_dict['total_problem'] = 0        # Total labels in data
+        result_dict['total_test'] = 0           # Total labels in data
+        result_dict['total_treatment'] = 0      # Total labels in data
+        result_dict['correct_problem'] = 0      # Correctly classified labels
+        result_dict['correct_test'] = 0         # Correctly classified labels
+        result_dict['correct_treatment'] = 0    # Correctly classified labels
         print("\n")
 
         for batch_num, X, Y in self.get_data(task='test'):
@@ -506,13 +513,20 @@ class task_NER():
             corr = class_bag['problem_cor']+class_bag['test_cor']+class_bag['treatment_cor']
             tot = class_bag['total']
 
+            result_dict['total_problem'] = result_dict['total_problem'] + class_bag['problem']
+            result_dict['total_test'] = result_dict['total_test'] + class_bag['test']
+            result_dict['total_treatment'] = result_dict['total_treatment'] + class_bag['treatment']
+            result_dict['correct_problem'] = result_dict['correct_problem'] + class_bag['problem_cor']
+            result_dict['correct_test'] = result_dict['correct_test'] + class_bag['test_cor']
+            result_dict['correct_treatment'] = result_dict['correct_treatment'] + class_bag['treatment_cor']
+
             correct += corr
             total += tot
             print("Test Example " + str(batch_num) + "/" + str(self.num_batches) + " processed, Batch Accuracy: {0:.2f} %, ".format((float(corr)/float(tot))*100.0) + "Batch Accuracy (Word Prediction): {0:.2f} %".format(class_bag['word_pred_acc']))
         
-        accuracy = (float(correct)/float(total))*100.0
-        print("\nOverall Entity Prediction Accuracy: {0:.2f} %".format(accuracy))
-        return accuracy         # in %
+        result_dict['accuracy'] = (float(correct)/float(total))*100.0
+        print("\nOverall Entity Prediction Accuracy: {0:.2f} %".format(result_dict['accuracy']))
+        return result_dict
 
     def save_model(self, curr_epoch, curr_batch):
         # Here 'start_epoch' and 'start_batch' params below are the 'epoch' and 'batch' number from which to start training after next model loading

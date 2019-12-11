@@ -56,7 +56,9 @@ def main():
     c_task.init_loss()
     c_task.batch_size = batch_size
     c_task.load_model(2, epoch, batch)
-    accuracy = c_task.test_model()
+    results = c_task.test_model()
+
+    print(results)
 
 if __name__ == '__main__':
     main()
