@@ -37,9 +37,9 @@ class task_NER():
 
         # Training Params
         self.num_batches = -1
-        self.save_batch = 50           # Saving model after every save_batch number of batches
-        self.batch_size = 5
-        self.num_epoch = 1
+        self.save_batch = 5            # Saving model after every save_batch number of batches
+        self.batch_size = 10
+        self.num_epoch = 4
 
         # Optimizer Params
         self.adam_lr = 1e-4
