@@ -12,7 +12,7 @@ import torch.nn.functional as F
 import numpy as np
 import random
 
-from DNC_GPU.dnc import DNC_Module  # Importing DNC Implementation
+from DNC.dnc import DNC_Module  # Importing DNC Implementation
 
 class task_NER():
 
@@ -28,8 +28,8 @@ class task_NER():
         self.num_write_heads = 1
 
         # Processor Params
-        self.num_inputs = 200           # Length of Embeddings
-        self.num_outputs = 7            # Class size
+        self.num_inputs = 200          # Length of Embeddings
+        self.num_outputs = 7           # Class size
 
         # Memory Params
         self.memory_N = 128
@@ -73,10 +73,9 @@ class task_NER():
 
     def init_dnc(self):
         self.machine = DNC_Module(self.num_inputs, self.num_outputs, self.controller_size, self.controller_layers, self.num_read_heads, self.num_write_heads, self.memory_N, self.memory_M)
-        self.machine.cuda()     # Enabling GPU
 
     def init_loss(self):
-        self.loss = nn.CrossEntropyLoss(reduction = 'mean').cuda()  # Cross Entropy Loss -> Softmax Activation + Cross Entropy Loss
+        self.loss = nn.CrossEntropyLoss(reduction = 'mean')  # Cross Entropy Loss -> Softmax Activation + Cross Entropy Loss
 
     def init_optimizer(self):
         self.optimizer = optim.Adam(self.machine.parameters(), lr = self.adam_lr, betas = self.adam_betas, eps = self.adam_eps)
@@ -84,7 +83,7 @@ class task_NER():
     def calc_loss(self, Y_pred, Y):
         # Y: dim -> (sequence_len x batch_size)
         # Y_pred: dim -> (sequence_len x batch_size x num_outputs)
-        loss_vec = torch.empty(Y.shape[0], dtype=torch.float32).cuda()
+        loss_vec = torch.empty(Y.shape[0], dtype=torch.float32)
         for i in range(Y_pred.shape[0]):
             loss_vec[i] = self.loss(Y_pred[i], Y[i])
         return torch.mean(loss_vec)
@@ -92,12 +91,6 @@ class task_NER():
     def calc_cost(self, Y_pred, Y):       # Calculates % Cost
         # Y: dim -> (sequence_len x batch_size)
         # Y_pred: dim -> (sequence_len x batch_size x sequence_width)
-
-        '''
-        Note: 
-        1). For considering an prediction to be True Positive, prediction must match completely with labels entity (not partially). Else it is False Negative.
-        2). For considering a prediction to be False Positive, it must be full entity (BIII) and not completely match the label entity.
-        '''
 
         # Stores correct class labels for each entity type
         class_bag = {}
@@ -107,9 +100,6 @@ class task_NER():
         class_bag['problem_cor'] = 0    # Correctly classified labels
         class_bag['test_cor'] = 0       # Correctly classified labels
         class_bag['treatment_cor'] = 0  # Correctly classified labels
-        class_bag['problem_fp'] = 0     # False positive classified labels
-        class_bag['test_fp'] = 0        # False positive classified labels
-        class_bag['treatment_fp'] = 0   # False positive classified labels
         
         pred_class = np.transpose(F.softmax(Y_pred, dim=2).max(2)[1].numpy()).reshape(-1)   # Predicted class. dim -> (sequence_len*batch_size)
         Y = np.transpose(Y.numpy()).reshape(-1)                                             # Converting to NumPy Array and linearizing
@@ -142,18 +132,8 @@ class task_NER():
             
             if sum_range == idx_range:              # +1 if entity is classified correctly
                 class_bag[lab+'_cor'] = class_bag[lab+'_cor']+1
-        
-        # Detecting False Positives
-        # Getting the beginning index of all the entities in Predicted Results
-        beg_idx_p = list(np.where(np.in1d(pred_class, [0, 2, 4]))[0])
-        
-        for b in beg_idx_p:
-            if cor_pred[b] == 0:
-                lab = self.reverseDict[Y[b]][2:]
-                class_bag[lab+'_fp'] = class_bag[lab+'_fp']+1
-
         return class_bag
-
+                
     def print_word(self, token_class):         # Prints the Class name from Class number
         word = self.reverseDict[token_class]
         print(word + "\n")
@@ -446,7 +426,7 @@ class task_NER():
 
             if counter % self.batch_size == 0:
                 counter = 0
-
+                
                 # Padding and converting labels to one hot vectors
                 x_out_pad, y_out_pad = self.padding(x_out, y_out)
                 x_out_array = torch.tensor(x_out_pad.swapaxes(0, 1), dtype=torch.float32)  # Converting from (batch_size x story_length x word size) to (story_length x batch_size x word size)
@@ -465,19 +445,15 @@ class task_NER():
         seq_length = []
         last_batch = 0
 
-        # self.load_model(1, 99, 13)  # Loading Pre-Trained model to train further
-
         for j in range(self.num_epoch):
             for batch_num, X, Y in self.get_data(task='train'):
                 self.optimizer.zero_grad()                      # Making old gradients zero before calculating the fresh ones
                 self.machine.initialization(self.batch_size)    # Initializing states
-                Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32).cuda()    # dim: (seq_len x batch_size x num_output)
+                Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32)    # dim: (seq_len x batch_size x num_output)
 
                 # Feeding the DNC network all the data first and then predicting output
                 # by giving zero vector as input and previous read states and hidden vector
                 # and thus training vector this way to give outputs matching the labels
-
-                X, Y = X.cuda(), Y.cuda()
 
                 embeddings = self.machine.backward_prediction(X)        # Creating embeddings from data for backward calculation
                 temp_size = X.shape[0]
@@ -490,7 +466,7 @@ class task_NER():
                 self.clip_grads()
                 self.optimizer.step()
 
-                class_bag = self.calc_cost(Y_out.cpu(), Y.cpu())
+                class_bag = self.calc_cost(Y_out, Y)
 
                 corr = class_bag['problem_cor']+class_bag['test_cor']+class_bag['treatment_cor']
                 tot = class_bag['total']
@@ -516,20 +492,15 @@ class task_NER():
         result_dict['correct_problem'] = 0      # Correctly classified labels
         result_dict['correct_test'] = 0         # Correctly classified labels
         result_dict['correct_treatment'] = 0    # Correctly classified labels
-        result_dict['false_positive_problem'] = 0      # False Positive labels
-        result_dict['false_positive_test'] = 0         # False Positive labels
-        result_dict['false_positive_treatment'] = 0    # False Positive labels
         print("\n")
 
         for batch_num, X, Y in self.get_data(task='test'):
             self.machine.initialization(self.batch_size)    # Initializing states
-            Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32).cuda()    # dim: (seq_len x batch_size x num_output)
+            Y_out = torch.empty((X.shape[0], X.shape[1], self.num_outputs), dtype=torch.float32)    # dim: (seq_len x batch_size x num_output)
 
             # Feeding the DNC network all the data first and then predicting output
             # by giving zero vector as input and previous read states and hidden vector
             # and thus training vector this way to give outputs matching the labels
-
-            X = X.cuda()
 
             embeddings = self.machine.backward_prediction(X)        # Creating embeddings from data for backward calculation
             temp_size = X.shape[0]
@@ -537,7 +508,7 @@ class task_NER():
             for i in range(temp_size):
                 Y_out[i, :, :], _ = self.machine(X[i], embeddings[temp_size-i-1])
 
-            class_bag = self.calc_cost(Y_out.cpu(), Y)
+            class_bag = self.calc_cost(Y_out, Y)
 
             corr = class_bag['problem_cor']+class_bag['test_cor']+class_bag['treatment_cor']
             tot = class_bag['total']
@@ -548,53 +519,13 @@ class task_NER():
             result_dict['correct_problem'] = result_dict['correct_problem'] + class_bag['problem_cor']
             result_dict['correct_test'] = result_dict['correct_test'] + class_bag['test_cor']
             result_dict['correct_treatment'] = result_dict['correct_treatment'] + class_bag['treatment_cor']
-            result_dict['false_positive_problem'] = result_dict['false_positive_problem'] + class_bag['problem_fp']
-            result_dict['false_positive_test'] = result_dict['false_positive_test'] + class_bag['test_fp']
-            result_dict['false_positive_treatment'] = result_dict['false_positive_treatment'] + class_bag['treatment_fp']
 
             correct += corr
             total += tot
             print("Test Example " + str(batch_num) + "/" + str(self.num_batches) + " processed, Batch Accuracy: {0:.2f} %, ".format((float(corr)/float(tot))*100.0) + "Batch Accuracy (Word Prediction): {0:.2f} %".format(class_bag['word_pred_acc']))
         
         result_dict['accuracy'] = (float(correct)/float(total))*100.0
-        result_dict = self.calc_metrics(result_dict)
         print("\nOverall Entity Prediction Accuracy: {0:.2f} %".format(result_dict['accuracy']))
-        return result_dict
-
-    def calc_metrics(self, result_dict):    # Calculates Certain Metrices
-        precision_p = float(result_dict['correct_problem'])/float(result_dict['correct_problem'] + result_dict['false_positive_problem'])   # Problem Precision
-        recall_p = float(result_dict['correct_problem'])/float(result_dict['total_problem'])                                                # Problem Recall
-
-        precision_ts = float(result_dict['correct_test'])/float(result_dict['correct_test'] + result_dict['false_positive_test'])           # Test Precision
-        recall_ts = float(result_dict['correct_test'])/float(result_dict['total_test'])                                                     # Test Recall
-
-        precision_tr = float(result_dict['correct_treatment'])/float(result_dict['correct_treatment'] + result_dict['false_positive_treatment'])    # Treatment Precision
-        recall_tr = float(result_dict['correct_treatment'])/float(result_dict['total_treatment'])                                                   # Treatment Recall
-
-        f_score_p = 2*precision_p*recall_p/(precision_p+recall_p)       # Problem F1 Score
-        f_score_ts = 2*precision_ts*recall_ts/(precision_ts+recall_ts)  # Test F1 Score
-        f_score_tr = 2*precision_tr*recall_tr/(precision_tr+recall_tr)  # Treatment F1 Score
-
-        result_dict['problem_precision'] = precision_p
-        result_dict['problem_recall'] = recall_p
-        result_dict['problem_f1'] = f_score_p
-        result_dict['test_precision'] = precision_ts
-        result_dict['test_recall'] = recall_ts
-        result_dict['test_f1'] = f_score_ts
-        result_dict['treatment_precision'] = precision_tr
-        result_dict['treatment_recall'] = recall_tr
-        result_dict['treatment_f1'] = f_score_tr
-        result_dict['macro_average_f1'] = (f_score_p + f_score_ts + f_score_tr)/3.0 # Macro Average F1 Score
-
-        # Micro Average F1 Score
-        correct_sum = result_dict['correct_problem'] + result_dict['correct_test'] + result_dict['correct_treatment']
-        fp_sum = result_dict['false_positive_problem'] + result_dict['false_positive_test'] + result_dict['false_positive_treatment']
-        total_sum = result_dict['total_problem'] + result_dict['total_test'] + result_dict['total_treatment']
-        
-        precision_avg = float(correct_sum)/float(correct_sum + fp_sum)
-        recall_avg = float(correct_sum)/float(total_sum)
-        result_dict['micro_average_f1'] = 2*precision_avg*recall_avg/(precision_avg+recall_avg)
-
         return result_dict
 
     def save_model(self, curr_epoch, curr_batch):
