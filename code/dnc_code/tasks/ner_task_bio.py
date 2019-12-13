@@ -148,7 +148,7 @@ class task_NER():
         
         for b in beg_idx_p:
             if cor_pred[b] == 0:
-                lab = self.reverseDict[Y[b]][2:]
+                lab = self.reverseDict[pred_class[b]][2:]
                 class_bag[lab+'_fp'] = class_bag[lab+'_fp']+1
 
         return class_bag
