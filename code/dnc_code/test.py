@@ -30,13 +30,13 @@ def main():
             print("\nStarting bAbI Question Answering Task for DNC\n")
         elif sys.argv[1] == "2":
             if sys.argv[2] == "GPU" and torch.cuda.is_available():  # Checking if GPU Request is given or not and availability of CUDA
-                from tasks.ner_task_GPU import task_NER
+                from tasks.ner_task_bio_GPU import task_NER
             elif sys.argv[2] == "CPU":
-                from tasks.ner_task import task_NER
+                from tasks.ner_task_bio import task_NER
             else:
                 print("Please specify the run device (GPU/CPU)")
                 exit()
-            c_task = task_NER()                    # Initialization of the bAbI Task
+            c_task = task_NER()                    # Initialization of the NER Task (This is for BIO Tagging. Edit at line 33 and 35 for BIEOS tagging)
             print("\nStarting Medical NER Task for DNC\n")
         else:
             print("Unidentified task, please refer README file")
@@ -56,7 +56,9 @@ def main():
     c_task.init_loss()
     c_task.batch_size = batch_size
     c_task.load_model(2, epoch, batch)
-    accuracy = c_task.test_model()
+    results = c_task.test_model()
+
+    print(results)
 
 if __name__ == '__main__':
     main()
