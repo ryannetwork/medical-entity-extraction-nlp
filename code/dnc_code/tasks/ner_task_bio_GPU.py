@@ -56,14 +56,14 @@ class task_NER():
         self.reverseDict = None       # Inverse Label Dictionary - Index to Labels
 
         # File Paths
-        self.concept_path_train = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/train_data/concept"  # Path to train concept files
-        self.text_path_train = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/train_data/txt"         # Path to train text summaries
-        self.concept_path_test = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/test_data/concept"    # Path to test concept files
-        self.text_path_test = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/test_data/txt"           # Path to test text summaries
-        self.save_path = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/cleaned_files"                # Save path
-        self.embed_dic_path = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/embeddings/bio_embedding_dictionary.dat"  # Word2Vec embeddings Dictionary path
-        self.random_vec = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/medical_data/embeddings/random_vec.dat"   # Path to random embedding (Used to create new vectors)
-        self.model_path = "/media/ramkabir/PC Data/ASU Data/Semester 3/BMNLP/Projects/Code/DNC Code/Saved_Models/"              # Stores Trained Models
+        self.concept_path_train = "../medical_data/train_data/concept"  # Path to train concept files
+        self.text_path_train = "../medical_data/train_data/txt"         # Path to train text summaries
+        self.concept_path_test = "../medical_data/test_data/concept"    # Path to test concept files
+        self.text_path_test = "../medical_data/test_data/txt"           # Path to test text summaries
+        self.save_path = "../medical_data/cleaned_files"                # Save path
+        self.embed_dic_path = "../medical_data/embeddings/bio_embedding_dictionary.dat"  # Word2Vec embeddings Dictionary path
+        self.random_vec = "../medical_data/embeddings/random_vec.dat"   # Path to random embedding (Used to create new vectors)
+        self.model_path = "../saved_models/"              # Stores Trained Models
 
         # Miscellaneous
         self.padding_symbol = np.full((self.num_inputs), 0.01)        # Padding symbol embedding
