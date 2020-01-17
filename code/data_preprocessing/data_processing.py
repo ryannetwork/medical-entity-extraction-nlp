@@ -164,9 +164,9 @@ def process_data(c_path, t_path, s_path):      # Read all the concept files to g
 if __name__ == '__main__':
 
     # File paths
-    save_path = "../../Medical Data/Training Data/cleaned_files"
-    concept_path = "../../Medical Data/Training Data/training_data/partners/concept"
-    text_path = "../../Medical Data/Training Data/training_data/partners/txt"
+    save_path = "./cleaned_files"
+    concept_path = "../dnc_code/medical_data/train/concept"
+    text_path = "../dnc_code/medical_data/train/txt"
 
     initialize_labels(save_path)                        # Initializing and saving the label dictionaries
     process_data(concept_path, text_path, save_path)    # Processing the data
